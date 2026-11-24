@@ -6,11 +6,14 @@ from psycopg.types.json import Jsonb
 
 from src.constants.enums import METHOD, Decision, Role, RunStatus
 from src.services.audit import record
+from src.services.briefs import issue_brief
 from src.services.records import get_study, list_pairs
 
 RUN_COLUMNS = '''r.id, r.study_id, r.revision, r.confidence, r.method, r.checksum, r.status, r.error,
-                 r.requested_by, r.created_at, r.finished_at, s.signed_at, s.signed_by, s.decision, s.note'''
-RUN_FROM = 'FROM analysis_runs r LEFT JOIN signoffs s ON s.run_id = r.id'
+                 r.requested_by, r.created_at, r.finished_at, s.signed_at, s.signed_by, s.decision,
+                 s.note, b.token AS brief_token'''
+RUN_FROM = ('FROM analysis_runs r LEFT JOIN signoffs s ON s.run_id = r.id '
+            'LEFT JOIN public_briefs b ON b.run_id = r.id')
 
 
 def snapshot_digest(snapshot):
@@ -78,6 +81,10 @@ def review(db, run_id, decision, note, actor):
     db.execute('INSERT INTO signoffs(run_id, decision, note, signed_by) VALUES (%s,%s,%s,%s)',
                (run_id, decision, note, actor))
     record(db, actor, f'analysis.{decision}', str(run_id), {'note': note, 'revision': run['revision']})
+    signed = detail(db, run_id, Role.CURATOR)
+    if decision == Decision.PUBLISH:
+        # 与会签同一事务冻结简报；重复发布重试命中已签发记录，不产生第二份。
+        issue_brief(db, signed)
     return detail(db, run_id, Role.CURATOR)
 
 

@@ -3,6 +3,7 @@ import { empty, layout } from './components/common/ui.js';
 import { pollWhile } from './hooks/poll.js';
 import { loginPage } from './pages/login.js';
 import { pairForm, pairsPage } from './pages/pairs.js';
+import { mountPublicBrief } from './pages/public-brief.js';
 import { reviewPage } from './pages/review.js';
 import { resultPage, runsPage } from './pages/runs.js';
 import { studyForm, versionForm, versionsPage } from './pages/versions.js';
@@ -15,7 +16,19 @@ const editors = { study: studyForm, version: versionForm, pair: pairForm };
 let cancelPoll = () => {};
 let renderCount = 0;
 
+// 免登录公开简报：#/brief/<token>，不读取也不要求会话。
+function publicToken() {
+  const match = location.hash.match(/^#\/?brief\/([A-Za-z0-9_-]{24,64})/);
+  return match ? match[1] : null;
+}
+
 async function render() {
+  const token = publicToken();
+  if (token) {
+    cancelPoll();
+    await mountPublicBrief(root);
+    return;
+  }
   const count = ++renderCount;
   cancelPoll();
   if (!store.user) {
@@ -143,7 +156,7 @@ root.addEventListener('submit', event => {
 root.addEventListener('click', async event => {
   const button = event.target.closest('button');
   if (!button) return;
-  const { demo, edit, close, code, filter, download, run } = button.dataset;
+  const { demo, edit, close, code, filter, download, run, copyBrief } = button.dataset;
   if (demo) {
     const form = document.querySelector('#login-form');
     form.elements.username.value = demo;
@@ -151,6 +164,11 @@ root.addEventListener('click', async event => {
     form.requestSubmit(form.querySelector('button[type=submit]'));
   } else if (button.id === 'logout') {
     logout();
+  } else if (copyBrief) {
+    const url = `${location.origin}${location.pathname}#/brief/${copyBrief}`;
+    navigator.clipboard.writeText(url)
+      .then(() => notify('简报链接已复制，可免登录打开'))
+      .catch(() => notify('复制失败，请打开简报后复制地址栏链接'));
   } else if (edit) {
     const dialog = document.querySelector('#editor');
     dialog.innerHTML = editors[edit](code);
